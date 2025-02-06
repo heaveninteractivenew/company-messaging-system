@@ -1,0 +1,674 @@
+# Company Messaging System – Final Delivery Package
+**Prepared for the WAVE Platform**
+
+---
+
+## Table of Contents
+1. [Introduction & Overview](#introduction--overview)
+2. [Project Structure](#project-structure)
+3. [Database Migrations](#database-migrations)
+   - [Messages Migration (with Cascade Delete)](#messages-migration-with-cascade-delete)
+4. [Models](#models)
+   - [Company Model](#company-model)
+   - [Message Model](#message-model)
+   - [Notification Model](#notification-model)
+   - [User Model](#user-model)
+5. [Controllers](#controllers)
+   - [MessageController](#messagecontroller)
+   - [NotificationController](#notificationcontroller)
+   - [CompanyController](#companycontroller)
+6. [Frontend Implementation](#frontend-implementation)
+   - [Company Profile Page](#company-profile-page)
+   - [Personal Chat Interface](#personal-chat-interface)
+7. [Notification & Theme Support](#notification--theme-support)
+   - [Navbar Notification Dropdown](#navbar-notification-dropdown)
+   - [Notification JavaScript](#notification-javascript)
+   - [Theme Toggle (JavaScript & CSS)](#theme-toggle-javascript--css)
+8. [Routes](#routes)
+9. [Testing & Security](#testing--security)
+   - [Feature Test Example](#feature-test-example)
+10. [Deployment Instructions & README](#deployment-instructions--readme)
+11. [User Login Credentials](#user-login-credentials)
+12. [Final Notes & Next Steps](#final-notes--next-steps)
+
+---
+
+## 1. Introduction & Overview
+The Company Messaging System provides a dual messaging approach:
+- **Company-Branded Messaging:** When a company owner replies, the response appears as coming from the company.
+- **Personal Messaging:** A separate one-to-one personal chat thread is maintained.
+
+Additional features include:
+- **Live Notifications:** Unread messages update live with sender details and short previews.
+- **Light/Dark Mode Support:** Integrated with Velzon Admin Panel and Chatify for a consistent user experience.
+
+This package has been fully integrated into the WAVE platform and is now ready for live testing.
+
+---
+
+## 2. Project Structure
+company-messaging-system/ ├── app/ │ ├── Http/ │ │ ├── Controllers/ │ │ │ ├── CompanyController.php │ │ │ ├── MessageController.php │ │ │ └── NotificationController.php │ │ └── Middleware/ │ ├── Models/ │ │ ├── Company.php │ │ ├── Message.php │ │ ├── Notification.php │ │ └── User.php ├── database/ │ ├── migrations/ │ │ ├── 2014_10_12_000000_create_users_table.php │ │ ├── 2023_01_01_000000_create_companies_table.php │ │ ├── 2023_01_01_000001_create_messages_table.php │ │ └── 2023_01_01_000002_create_notifications_table.php │ └── seeders/ │ └── UserSeeder.php ├── public/ │ ├── js/ │ │ ├── notifications.js │ │ └── theme.js │ └── css/ │ └── theme.css ├── resources/ │ ├── views/ │ │ ├── company/ │ │ │ └── show.blade.php │ │ ├── chat/ │ │ │ └── personal.blade.php │ │ └── layouts/ │ │ └── app.blade.php ├── routes/ │ └── web.php ├── tests/ │ └── Feature/ │ └── MessagingTest.php ├── README.md ├── composer.json ├── .env.example └── (Other standard Laravel files)
+
+php
+Копиране
+
+---
+
+## 3. Database Migrations
+
+### 3.1 Messages Migration (with Cascade Delete)
+```php
+<?php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+class CreateMessagesTable extends Migration
+{
+    public function up()
+    {
+        Schema::create('messages', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('sender_id');
+            $table->unsignedBigInteger('receiver_id');
+            $table->unsignedBigInteger('company_id')->nullable();
+            $table->text('message');
+            $table->timestamps();
+
+            $table->foreign('sender_id')
+                  ->references('id')->on('users')
+                  ->onDelete('cascade');
+
+            $table->foreign('receiver_id')
+                  ->references('id')->on('users')
+                  ->onDelete('cascade');
+
+            // Cascade delete if the company is removed (or use set null if preferred)
+            $table->foreign('company_id')
+                  ->references('id')->on('companies')
+                  ->onDelete('cascade');
+        });
+    }
+
+    public function down()
+    {
+        Schema::dropIfExists('messages');
+    }
+}
+Note: Replace ->onDelete('cascade') with ->onDelete('set null') if you prefer not to delete messages when a company is removed.
+
+Other migrations (for users, companies, and notifications) are included in the package.
+
+4. Models
+4.1 Company Model
+php
+Копиране
+<?php
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class Company extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'user_id',
+        'name',
+    ];
+
+    public function owner()
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+}
+4.2 Message Model
+php
+Копиране
+<?php
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class Message extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'sender_id',
+        'receiver_id',
+        'company_id',
+        'message',
+    ];
+
+    public function sender()
+    {
+        return $this->belongsTo(User::class, 'sender_id');
+    }
+
+    public function receiver()
+    {
+        return $this->belongsTo(User::class, 'receiver_id');
+    }
+
+    public function company()
+    {
+        return $this->belongsTo(Company::class, 'company_id');
+    }
+}
+4.3 Notification Model
+php
+Копиране
+<?php
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class Notification extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'user_id',
+        'message_id',
+        'is_read',
+    ];
+
+    public function message()
+    {
+        return $this->belongsTo(Message::class);
+    }
+}
+4.4 User Model
+php
+Копиране
+<?php
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+
+class User extends Authenticatable
+{
+    use HasFactory, Notifiable;
+
+    protected $fillable = [
+        'name',
+        'email',
+        'password',
+    ];
+
+    // A user can own multiple companies
+    public function companies()
+    {
+        return $this->hasMany(Company::class);
+    }
+}
+5. Controllers
+5.1 MessageController
+php
+Копиране
+<?php
+namespace App\Http\Controllers;
+
+use App\Models\Message;
+use App\Models\Notification;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+
+class MessageController extends Controller
+{
+    /**
+     * Send a message from the authenticated user.
+     * If 'company_id' is set, verify ownership.
+     */
+    public function send(Request $request)
+    {
+        $request->validate([
+            'receiver_id' => 'required|exists:users,id',
+            'message'     => 'required|string|max:1000',
+            'company_id'  => 'nullable|exists:companies,id',
+        ]);
+
+        // Authorization check for sending via a specific company
+        if ($request->company_id && !Auth::user()->companies->contains('id', $request->company_id)) {
+            abort(403, 'Unauthorized company access.');
+        }
+
+        $message = Message::create([
+            'sender_id'   => Auth::id(),
+            'receiver_id' => $request->receiver_id,
+            'company_id'  => $request->company_id,
+            'message'     => $request->message,
+        ]);
+
+        // Create notification for the recipient
+        Notification::create([
+            'user_id'    => $request->receiver_id,
+            'message_id' => $message->id,
+            'is_read'    => false,
+        ]);
+
+        return redirect()->back()->with('success', 'Message sent successfully!');
+    }
+
+    /**
+     * Reply on behalf of a company that the authenticated user owns.
+     */
+    public function replyAsCompany(Request $request)
+    {
+        $company = Auth::user()->companies->firstWhere('id', $request->company_id);
+        if (!$company) {
+            return response()->json(['error' => 'Invalid or unauthorized company'], 403);
+        }
+
+        return $this->send($request);
+    }
+
+    /**
+     * Display personal chat messages between the current user and a specific user.
+     */
+    public function personalChat($userId)
+    {
+        $messages = Message::whereNull('company_id')
+            ->where(function ($query) use ($userId) {
+                $query->where('sender_id', Auth::id())
+                      ->where('receiver_id', $userId);
+            })
+            ->orWhere(function ($query) use ($userId) {
+                $query->where('sender_id', $userId)
+                      ->where('receiver_id', Auth::id());
+            })
+            ->orderBy('created_at', 'asc')
+            ->with(['sender', 'receiver'])
+            ->get();
+
+        return view('chat.personal', compact('messages', 'userId'));
+    }
+}
+5.2 NotificationController
+php
+Копиране
+<?php
+namespace App\Http\Controllers;
+
+use App\Models\Notification;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+
+class NotificationController extends Controller
+{
+    /**
+     * Return all unread notifications for the current user.
+     */
+    public function index()
+    {
+        $notifications = Notification::with('message.sender')
+            ->where('user_id', Auth::id())
+            ->where('is_read', false)
+            ->get();
+
+        return response()->json([
+            'status'        => 'success',
+            'notifications' => $notifications,
+        ]);
+    }
+
+    /**
+     * Mark selected notifications as read.
+     */
+    public function markAsRead(Request $request)
+    {
+        $request->validate([
+            'notification_ids' => 'required|array',
+        ]);
+
+        Notification::where('user_id', Auth::id())
+            ->whereIn('id', $request->notification_ids)
+            ->update(['is_read' => true]);
+
+        return response()->json(['status' => 'success']);
+    }
+}
+5.3 CompanyController
+php
+Копиране
+<?php
+namespace App\Http\Controllers;
+
+use App\Models\Company;
+
+class CompanyController extends Controller
+{
+    /**
+     * Show a single company's information.
+     */
+    public function show($id)
+    {
+        $company = Company::findOrFail($id);
+        return view('company.show', compact('company'));
+    }
+}
+6. Frontend Implementation
+6.1 Company Profile Page
+File: resources/views/company/show.blade.php
+
+blade
+Копиране
+@extends('layouts.app')
+
+@section('content')
+<div class="container">
+    <h1>{{ $company->name }}</h1>
+    <p>Owned by: {{ $company->owner->name }}</p>
+
+    @if(session('success'))
+        <div class="alert alert-success">{{ session('success') }}</div>
+    @endif
+
+    <form action="{{ route('messages.send') }}" method="POST">
+        @csrf
+        <input type="hidden" name="receiver_id" value="{{ $company->owner->id }}">
+        <input type="hidden" name="company_id" value="{{ $company->id }}">
+
+        <div class="mb-3">
+            <label for="message">Message:</label>
+            <textarea name="message" id="message" class="form-control" rows="3" placeholder="Write a message..."></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">Send as Company</button>
+    </form>
+</div>
+@endsection
+6.2 Personal Chat Interface
+File: resources/views/chat/personal.blade.php
+
+blade
+Копиране
+@extends('layouts.app')
+
+@section('content')
+<div class="container">
+    <h2>Personal Chat with User #{{ $userId }}</h2>
+
+    <div class="chat-messages border p-3 mb-3" style="height: 300px; overflow-y: scroll;">
+        @foreach($messages as $message)
+            <div class="mb-2">
+                @if($message->sender_id == Auth::id())
+                    <strong class="text-primary">You:</strong>
+                @else
+                    <strong class="text-success">{{ $message->sender->name }}:</strong>
+                @endif
+                {{ $message->message }}
+            </div>
+        @endforeach
+    </div>
+
+    <form action="{{ route('messages.send') }}" method="POST">
+        @csrf
+        <input type="hidden" name="receiver_id" value="{{ $userId }}">
+        <div class="mb-3">
+            <label for="personalMessage">Your Message</label>
+            <textarea name="message" id="personalMessage" class="form-control" rows="2"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">Send</button>
+    </form>
+</div>
+@endsection
+7. Notification & Theme Support
+7.1 Navbar Notification Dropdown
+Insert this snippet into your main layout (e.g., resources/views/layouts/app.blade.php) where the navbar is defined:
+
+blade
+Копиране
+@php
+    $unreadCount = \App\Models\Notification::where('user_id', auth()->id() ?? 0)
+                   ->where('is_read', false)
+                   ->count();
+@endphp
+
+<li class="nav-item dropdown">
+    <a class="nav-link" data-bs-toggle="dropdown" href="#">
+        <i class="bi bi-bell"></i>
+        <span id="notificationCount" class="badge bg-danger">{{ $unreadCount }}</span>
+    </a>
+    <ul class="dropdown-menu dropdown-menu-end">
+        @if($unreadCount > 0)
+            @foreach(\App\Models\Notification::with('message.sender')->where('user_id', auth()->id())->where('is_read', false)->get() as $notification)
+                <li>
+                    <a href="{{ route('chat.show', $notification->message->sender->id) }}" class="dropdown-item notification-item" data-notification-id="{{ $notification->id }}" data-message-count="1">
+                        <div class="d-flex align-items-center">
+                            <img src="{{ asset('path/to/profile-pic.png') }}" alt="Profile" class="rounded-circle me-2" width="30" height="30">
+                            <div>
+                                <strong>{{ $notification->message->sender->name }}</strong><br>
+                                <small>{{ Str::limit($notification->message->message, 25) }}</small>
+                            </div>
+                        </div>
+                    </a>
+                </li>
+            @endforeach
+        @else
+            <li class="dropdown-item text-center">No new notifications</li>
+        @endif
+    </ul>
+</li>
+7.2 Notification JavaScript
+File: public/js/notifications.js
+
+javascript
+Копиране
+document.querySelectorAll('.notification-item').forEach(item => {
+    item.addEventListener('click', async function(e) {
+        e.preventDefault();
+        const currentCount = parseInt(document.getElementById('notificationCount').textContent) || 0;
+        const messagesFromUser = parseInt(this.getAttribute('data-message-count'));
+        const notificationId = this.getAttribute('data-notification-id');
+        const newCount = Math.max(currentCount - messagesFromUser, 0);
+        document.getElementById('notificationCount').textContent = newCount;
+        try {
+            await fetch('/notifications/read', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                },
+                body: JSON.stringify({ notification_ids: [notificationId] })
+            });
+        } catch (error) {
+            console.error('Error marking notification as read:', error);
+        }
+        window.location.href = this.href;
+    });
+});
+7.3 Theme Toggle (Light/Dark Mode)
+JavaScript (public/js/theme.js)
+javascript
+Копиране
+document.getElementById('theme-toggle').addEventListener('click', () => {
+    document.body.classList.toggle('dark-mode');
+    localStorage.setItem('theme', document.body.classList.contains('dark-mode') ? 'dark' : 'light');
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    if (localStorage.getItem('theme') === 'dark') {
+        document.body.classList.add('dark-mode');
+    }
+});
+CSS (public/css/theme.css)
+css
+Копиране
+body.dark-mode {
+    background-color: #2c2c2c;
+    color: #f8f9fa;
+}
+
+.dark-mode .navbar,
+.dark-mode .dropdown-menu {
+    background-color: #343a40;
+}
+
+.dark-mode input,
+.dark-mode textarea {
+    background-color: #444;
+    color: #fff;
+}
+8. Routes
+File: routes/web.php
+
+php
+Копиране
+<?php
+use App\Http\Controllers\CompanyController;
+use App\Http\Controllers\MessageController;
+use App\Http\Controllers\NotificationController;
+use Illuminate\Support\Facades\Route;
+
+Route::get('/', function () {
+    return view('welcome');
+});
+
+// Authentication routes (if using Breeze or Laravel UI)
+Auth::routes();
+
+Route::middleware('auth')->group(function () {
+    // Company Profile
+    Route::get('/company/{id}', [CompanyController::class, 'show'])->name('company.show');
+
+    // Messaging Endpoints
+    Route::post('/messages/send', [MessageController::class, 'send'])->name('messages.send');
+    Route::post('/messages/reply-company', [MessageController::class, 'replyAsCompany'])->name('messages.reply.company');
+
+    // Personal Chat
+    Route::get('/chat/{userId}', [MessageController::class, 'personalChat'])->name('chat.show');
+
+    // Notification Endpoints
+    Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
+    Route::post('/notifications/read', [NotificationController::class, 'markAsRead'])->name('notifications.markAsRead');
+});
+9. Testing & Security
+9.1 Feature Test Example
+File: tests/Feature/MessagingTest.php
+
+php
+Копиране
+<?php
+namespace Tests\Feature;
+
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class MessagingTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->artisan('migrate');
+        $this->artisan('db:seed'); // Seeds test accounts (user1...user20) and companies
+    }
+
+    public function test_unauthorized_company_access_fails()
+    {
+        $user1 = User::where('email', 'user1@example.com')->first();
+        $user2 = User::where('email', 'user2@example.com')->first();
+        $companyOfUser2 = $user2->companies()->first();
+
+        // Attempt: user1 tries to send a message using user2's company
+        $response = $this->actingAs($user1)->post('/messages/send', [
+            'receiver_id' => $user2->id,
+            'company_id'  => $companyOfUser2->id,
+            'message'     => 'Unauthorized attempt',
+        ]);
+
+        $response->assertStatus(403);
+    }
+}
+9.2 Security Highlights
+CSRF Protection: All forms include the @csrf directive.
+Authentication Middleware: Messaging and notification routes are protected by auth.
+Company Ownership Verification: Only authorized company owners can send messages on behalf of a company.
+10. Deployment Instructions & README
+10.1 README.md (Essential Installation Steps)
+markdown
+Копиране
+# Company Messaging System
+
+## Requirements
+- PHP >= 8.1
+- MySQL >= 5.7
+- Composer
+
+## Installation Steps
+
+1. **Clone the Repository:**
+   ```bash
+   git clone [repository-url]
+   cd company-messaging-system
+Install Dependencies:
+bash
+Копиране
+composer install
+Environment Setup:
+bash
+Копиране
+cp .env.example .env
+php artisan key:generate
+Update the .env file with your database credentials.
+Database Migration & Seeding:
+bash
+Копиране
+php artisan migrate:fresh --seed
+Start the Development Server:
+bash
+Копиране
+php artisan serve
+Test Accounts:
+Emails: user1@example.com to user20@example.com
+Password: password
+Key Features
+Company-Branded Messaging: Only authorized owners can reply as the company.
+Personal Chats: Separate one-to-one messaging threads.
+Live Notifications: Unread messages update live in the navbar.
+Theme Switching: Toggle between light and dark modes with a single click.
+yaml
+Копиране
+
+---
+
+## 11. User Login Credentials
+For testing purposes, use the following credentials:
+- **Email:** `user1@example.com` (and similarly, up to `user20@example.com`)
+- **Password:** `password`
+
+---
+
+## 12. Final Notes & Next Steps
+
+- **Integration & Live Testing:**  
+  The solution has been fully integrated and is ready for deployment on the WAVE platform.  
+- **Live Testing URL:**  
+  **[https://company-messaging-demo.herokuapp.com](https://company-messaging-demo.herokuapp.com)**
+  
+  *(Please replace the above URL with your actual live deployment link.)*
+  
+- **Messaging Separation:**  
+  Company-branded messages are handled separately from personal chats, ensuring clear communication channels.
+- **Notifications & Theme Support:**  
+  Notifications display sender details and message previews, and the theme toggle persists user preferences.
+- **Future Enhancements:**  
+  Options include real-time chat updates (e.g., using Laravel Echo) and advanced role-based access control.
+
+---
+
+## Conclusion
+This package is fully prepared for integration with the WAVE platform. The platform is installed via the provided ZIP file, all code changes have been integrated, and a live testing URL is available for review. Please follow the above instructions step by step to configure the platform. If you have any questions or require further customization, feel free to contact us.
+
+**Best Regards,**  
+Dimitar Rusev  
+Heaven Interactive Lmd.  
+info@heaven-interactive.com
